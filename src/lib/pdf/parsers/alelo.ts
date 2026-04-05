@@ -146,10 +146,11 @@ export function parseAlelo(text: string): AleloResult {
       }
 
       if (amount < 0) {
+        const merchantName = merchant.trim() || line
         transactions.push({
           date: currentDate,
-          description: line,
-          merchant: merchant.trim() || line,
+          description: merchantName,
+          merchant: merchantName,
           amount,
           raw_category: wallet_type === 'refeicao' ? 'REFEIÇÃO' : 'ALIMENTAÇÃO',
           card_last4: null,
