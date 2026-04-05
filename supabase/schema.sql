@@ -173,3 +173,21 @@ CREATE POLICY "own_goals" ON savings_goals FOR ALL USING (user_id = auth.uid());
 CREATE INDEX idx_pdf_imports_user           ON pdf_imports(user_id);
 CREATE UNIQUE INDEX idx_transactions_fingerprint ON transactions(user_id, fingerprint) WHERE fingerprint IS NOT NULL;
 CREATE INDEX idx_pdf_imports_file_hash          ON pdf_imports(user_id, file_hash)   WHERE file_hash  IS NOT NULL;
+
+-- Ativos de investimento (renda variável)
+CREATE TABLE investment_assets (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID NOT NULL REFERENCES budgely_users(id) ON DELETE CASCADE,
+  ticker     TEXT NOT NULL,
+  name       TEXT,
+  quantity   NUMERIC(18,6) NOT NULL CHECK (quantity > 0),
+  avg_price  NUMERIC(14,6) NOT NULL CHECK (avg_price > 0),
+  asset_type TEXT NOT NULL CHECK (asset_type IN ('acao','fii','etf','bdr','crypto')),
+  active     BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, ticker)
+);
+
+ALTER TABLE investment_assets ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "own_investments" ON investment_assets FOR ALL USING (user_id = auth.uid());
+CREATE INDEX idx_investment_assets_user ON investment_assets(user_id) WHERE active = true;

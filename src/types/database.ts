@@ -339,6 +339,40 @@ export interface Database {
           },
         ]
       }
+      investment_assets: {
+        Row: {
+          id: string
+          user_id: string
+          ticker: string
+          name: string | null
+          quantity: number
+          avg_price: number
+          asset_type: 'acao' | 'fii' | 'etf' | 'bdr' | 'crypto'
+          active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          ticker: string
+          name?: string | null
+          quantity: number
+          avg_price: number
+          asset_type: 'acao' | 'fii' | 'etf' | 'bdr' | 'crypto'
+          active?: boolean
+          created_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['investment_assets']['Insert']>
+        Relationships: [
+          {
+            foreignKeyName: 'investment_assets_user_id_fkey'
+            columns: ['user_id']
+            isOneToOne: false
+            referencedRelation: 'budgely_users'
+            referencedColumns: ['id']
+          },
+        ]
+      }
     }
     Views: Record<never, never>
     Functions: Record<never, never>
@@ -357,3 +391,4 @@ export type WaSession = Database['public']['Tables']['wa_sessions']['Row']
 export type ProcessedWebhookMessage = Database['public']['Tables']['processed_webhook_messages']['Row']
 export type Budget = Database['public']['Tables']['budgets']['Row']
 export type SavingsGoal = Database['public']['Tables']['savings_goals']['Row']
+export type InvestmentAsset = Database['public']['Tables']['investment_assets']['Row']
