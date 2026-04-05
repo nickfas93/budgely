@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+/* Design system — Azure Ledger / Budgely */
+@theme inline {
+  /* Brand colors (Material Design 3 scheme) */
+  --color-primary: #063669;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #274e82;
+  --color-on-primary-container: #9cc0fb;
+  --color-primary-fixed: #d5e3ff;
+  --color-primary-fixed-dim: #a7c8ff;
+  --color-inverse-primary: #a7c8ff;
+  --color-on-primary-fixed: #001b3c;
+  --color-on-primary-fixed-variant: #1f477b;
+
+  --color-secondary: #006c49;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #6cf8bb;
+  --color-on-secondary-container: #00714d;
+  --color-secondary-fixed: #6ffbbe;
+  --color-secondary-fixed-dim: #4edea3;
+  --color-on-secondary-fixed: #002113;
+  --color-on-secondary-fixed-variant: #005236;
+
+  --color-tertiary: #2e364b;
+  --color-on-tertiary: #ffffff;
+  --color-tertiary-container: #454d62;
+  --color-on-tertiary-container: #b6bed8;
+  --color-tertiary-fixed: #dae2fd;
+  --color-tertiary-fixed-dim: #bec6e0;
+  --color-on-tertiary-fixed: #131b2e;
+  --color-on-tertiary-fixed-variant: #3f465c;
+
+  --color-error: #ba1a1a;
+  --color-on-error: #ffffff;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+
+  --color-background: #f8f9ff;
+  --color-on-background: #0b1c30;
+  --color-surface: #f8f9ff;
+  --color-on-surface: #0b1c30;
+  --color-surface-variant: #d3e4fe;
+  --color-on-surface-variant: #434653;
+  --color-surface-bright: #f8f9ff;
+  --color-surface-dim: #cbdbf5;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #eff4ff;
+  --color-surface-container: #e5eeff;
+  --color-surface-container-high: #dce9ff;
+  --color-surface-container-highest: #d3e4fe;
+
+  --color-outline: #737784;
+  --color-outline-variant: #c3c6d5;
+  --color-inverse-surface: #213145;
+  --color-inverse-on-surface: #eaf1ff;
+  --color-surface-tint: #3a5f94;
+
+  /* Fonts */
+  --font-sans: var(--font-inter);
+  --font-headline: var(--font-manrope);
+}
+
+body {
+  background-color: #f8f9ff;
+  color: #0b1c30;
+  font-family: var(--font-inter), Inter, sans-serif;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-manrope), Manrope, sans-serif;
+}
