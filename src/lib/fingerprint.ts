@@ -12,15 +12,18 @@ function normalize(s: string): string {
 /**
  * Deterministic fingerprint for a transaction.
  * Used to detect and skip duplicate inserts.
- * Key: userId | date | amount | normalize(merchant ?? description)
+ * Key: userId | date | amount | normalize(merchant ?? description) | installmentCurrent
+ * installmentCurrent differentiates installment #1 from #2 of the same purchase series.
  */
 export function transactionFingerprint(
   userId: string,
   date: string,
   amount: number,
   merchantOrDescription: string,
+  installmentCurrent?: number | null,
 ): string {
-  const key = `${userId}|${date}|${amount}|${normalize(merchantOrDescription)}`
+  const installPart = installmentCurrent != null ? `|${installmentCurrent}` : ''
+  const key = `${userId}|${date}|${amount}|${normalize(merchantOrDescription)}${installPart}`
   return createHash('sha256').update(key).digest('hex')
 }
 

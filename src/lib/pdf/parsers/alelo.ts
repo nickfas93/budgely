@@ -66,9 +66,13 @@ export function parseAlelo(text: string): AleloResult {
   const lines = text.split(/\n/).map(l => l.trim())
 
   const transactions: ParsedTransaction[] = []
-  let refeicao_budget = 0
-  let alimentacao_budget = 0
+  const budgetByMonth = new Map<string, { refeicao: number; alimentacao: number }>()
   const seenMonths = new Set<number>()
+
+  function getMonthBudget(monthKey: string) {
+    if (!budgetByMonth.has(monthKey)) budgetByMonth.set(monthKey, { refeicao: 0, alimentacao: 0 })
+    return budgetByMonth.get(monthKey)!
+  }
 
   let currentDate: string | null = null
 
@@ -90,10 +94,12 @@ export function parseAlelo(text: string): AleloResult {
       const nextLine = lines[i + 1] ?? ''
       const valMatch = nextLine.match(/R\$\s*([\d.,]+)/i)
       const val = valMatch ? parseBrlValue(valMatch[1]) : 0
-      // Alelo divide créditos em 2 linhas: primeiro refeição, depois alimentação
-      // Heurística: acumulamos alternando — se refeicao_budget == alimentacao_budget, é refeição
-      if (refeicao_budget <= alimentacao_budget) refeicao_budget += val
-      else alimentacao_budget += val
+      // Track budget per month to avoid accumulating across months
+      const monthKey = currentDate!.slice(0, 7)
+      const mb = getMonthBudget(monthKey)
+      // Alelo divides credits in 2 lines: first refeição, then alimentação
+      if (mb.refeicao <= mb.alimentacao) mb.refeicao += val
+      else mb.alimentacao += val
       i++ // pula linha DISPONIBILIZACAO
       continue
     }
@@ -102,8 +108,10 @@ export function parseAlelo(text: string): AleloResult {
       // linha DISPONIBILIZACAO sem "Saldo liberado" antes — captura valor direto
       const valMatch = line.match(/R\$\s*([\d.,]+)/i)
       const val = valMatch ? parseBrlValue(valMatch[1]) : 0
-      if (refeicao_budget <= alimentacao_budget) refeicao_budget += val
-      else alimentacao_budget += val
+      const monthKey = currentDate!.slice(0, 7)
+      const mb = getMonthBudget(monthKey)
+      if (mb.refeicao <= mb.alimentacao) mb.refeicao += val
+      else mb.alimentacao += val
       continue
     }
 
@@ -122,7 +130,7 @@ export function parseAlelo(text: string): AleloResult {
         const inlineVal = nextLine.match(/^(.+?)\s+R\$\s*([\d.,]+)\s*$/i)
         if (inlineVal) {
           merchant = inlineVal[1].trim()
-          amount = Math.abs(parseBrlValue(inlineVal[2]))
+          amount = -Math.abs(parseBrlValue(inlineVal[2]))
           j++
         } else {
           // fallback: estabelecimento e valor em linhas separadas
@@ -132,12 +140,12 @@ export function parseAlelo(text: string): AleloResult {
           }
           const valLine = j < lines.length ? lines[j] : ''
           const vm = valLine.match(/R\$\s*([\d.,]+)/i)
-          amount = vm ? Math.abs(parseBrlValue(vm[1])) : 0
+          amount = vm ? -Math.abs(parseBrlValue(vm[1])) : 0
           if (vm) j++
         }
       }
 
-      if (amount > 0) {
+      if (amount < 0) {
         transactions.push({
           date: currentDate,
           description: line,
@@ -166,11 +174,13 @@ export function parseAlelo(text: string): AleloResult {
   }
 
   const reference_month = `${year}-${String(refMonth).padStart(2, '0')}-01`
+  const refMonthKey = `${year}-${String(refMonth).padStart(2, '0')}`
+  const refBudget = budgetByMonth.get(refMonthKey) ?? { refeicao: 0, alimentacao: 0 }
 
   return {
     transactions,
-    refeicao_budget,
-    alimentacao_budget,
+    refeicao_budget: refBudget.refeicao,
+    alimentacao_budget: refBudget.alimentacao,
     reference_month,
   }
 }

@@ -181,6 +181,7 @@ export async function POST(req: Request) {
         p.date,
         p.amount,
         p.merchant ?? p.description,
+        p.installment_current,
       )
 
       return {
@@ -204,6 +205,7 @@ export async function POST(req: Request) {
     })
 
     // Pre-filter: skip rows whose fingerprint already exists for this user
+    // Also deduplicate within the batch itself to avoid unique-constraint failures
     let duplicates_skipped = 0
     let newRows = rows
     if (rows.length > 0) {
@@ -214,7 +216,12 @@ export async function POST(req: Request) {
         .eq('user_id', user.id)
         .in('fingerprint', fps)
       const existingSet = new Set(existing?.map(e => e.fingerprint) ?? [])
-      newRows = rows.filter(r => !existingSet.has(r.fingerprint))
+      const seenInBatch = new Set<string>()
+      newRows = rows.filter(r => {
+        if (existingSet.has(r.fingerprint) || seenInBatch.has(r.fingerprint)) return false
+        seenInBatch.add(r.fingerprint)
+        return true
+      })
       duplicates_skipped = rows.length - newRows.length
     }
 

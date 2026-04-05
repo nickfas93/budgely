@@ -2,7 +2,7 @@
  * Parser Itaú — Extrato conta corrente (itau_debit).
  *
  * Formato típico: DD/MM/AAAA DESCRIÇÃO VALOR SALDO
- * Mantém apenas valores negativos (débito) como despesa com amount > 0.
+ * Mantém apenas valores negativos (débito) como despesa com amount < 0.
  * Ignora saldo do dia, rendimento, TED/salário positivo, pagamento de fatura.
  */
 
@@ -67,15 +67,14 @@ export function parseItauDebit(text: string): ParsedTransaction[] {
       continue
     }
 
-    const amountOut = Math.abs(value)
-
     const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    const merchant = desc.replace(/-CT$/i, '').trim() || desc
 
     out.push({
       date: dateStr,
       description: line,
-      merchant: desc,
-      amount: amountOut,
+      merchant,
+      amount: value,
       raw_category: null,
       card_last4: null,
       is_installment: false,

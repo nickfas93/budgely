@@ -24,10 +24,12 @@ export interface ParsedTransaction {
   alelo_wallet_type?: 'refeicao' | 'alimentacao' | null
 }
 
-const BRL_END = /(-?[\d]{1,3}(?:\.[\d]{3})*,\d{2}|-?[\d]+,\d{2})$/
+const BRL_END = /(-\s*[\d]{1,3}(?:\.[\d]{3})*,\d{2}|-\s*[\d]+,\d{2}|[\d]{1,3}(?:\.[\d]{3})*,\d{2}|[\d]+,\d{2})$/
+const CT_SUFFIX = /-CT$/i
+const IOF_RE = /^IOF\s+(?:R\$\s*)?([\d.,]+)/i
 
 function parseBrl(s: string): number {
-  const t = s.trim().replace(/\./g, '').replace(',', '.')
+  const t = s.trim().replace(/\s/g, '').replace(/\./g, '').replace(',', '.')
   const n = Number.parseFloat(t)
   return Number.isFinite(n) ? n : NaN
 }
@@ -68,6 +70,7 @@ function inferDate(
 
 const INSTALL_RE = /\b(\d{1,2})\s*\/\s*(\d{1,2})\b/
 const FINAL4_RE = /\(final\s*(\d{4})\)/i
+const SKIP_PREFIXES = ['subtotal', 'total ', 'saldo anterior', 'pagamento em ', 'pagamento -', 'pagamento recebido']
 
 function parseInstallment(text: string): {
   is_installment: boolean
@@ -136,6 +139,9 @@ export function parseItauCredit(text: string): ParsedTransaction[] {
     if (month < 1 || month > 12 || day < 1 || day > 31) continue
 
     const rest = m[3]
+    const restLower = rest.toLowerCase()
+    if (SKIP_PREFIXES.some(p => restLower.startsWith(p))) continue
+
     const vm = rest.match(BRL_END)
     if (!vm) continue
 
@@ -152,20 +158,44 @@ export function parseItauCredit(text: string): ParsedTransaction[] {
       }
     }
 
-    const inst = parseInstallment(beforeValue + ' ' + line)
-    const merchant = beforeValue.replace(INSTALL_RE, '').trim() || beforeValue
+    // IOF line appears right after category line (or transaction line if no category)
+    const iofLineIdx = rawCat !== null ? i + 2 : i + 1
+    const iofLine = iofLineIdx < lines.length ? lines[iofLineIdx] : ''
+    const iofMatch = iofLine.match(IOF_RE)
+
+    const inst = parseInstallment(beforeValue)
+    const rawMerchant = beforeValue.replace(INSTALL_RE, '').trim() || beforeValue
+    const merchant = rawMerchant.replace(CT_SUFFIX, '').trim() || rawMerchant
 
     out.push({
       date: inferDate(day, month, closing),
       description: line,
-      merchant: merchant || beforeValue,
-      amount,
+      merchant,
+      amount: -amount,
       raw_category: rawCat,
       card_last4: pendingCard,
       is_installment: inst.is_installment,
       installment_current: inst.installment_current,
       installment_total: inst.installment_total,
     })
+
+    if (iofMatch) {
+      const iofAmt = parseBrl(iofMatch[1])
+      if (Number.isFinite(iofAmt) && iofAmt > 0) {
+        out.push({
+          date: inferDate(day, month, closing),
+          description: iofLine,
+          merchant: `IOF - ${merchant}`,
+          amount: -iofAmt,
+          raw_category: rawCat,
+          card_last4: pendingCard,
+          is_installment: false,
+          installment_current: null,
+          installment_total: null,
+        })
+        i = iofLineIdx
+      }
+    }
   }
 
   return out

@@ -19,6 +19,7 @@ import { parseItauDebit } from '@/lib/pdf/parsers/itau-debit'
 import { parseAlelo } from '@/lib/pdf/parsers/alelo'
 import { classifyTransactions } from '@/lib/claude'
 import type { ParsedTransaction } from '@/lib/pdf/parsers/itau-credit'
+import { transactionFingerprint } from '@/lib/fingerprint'
 
 export const runtime = 'nodejs'
 
@@ -142,6 +143,7 @@ export async function POST(req: NextRequest) {
     const rows = parsed.map((p, i) => {
       const slug = classifications[i]?.category_slug ?? 'outros'
       const category_id = slugToId.get(slug) ?? slugToId.get('outros') ?? null
+      const fp = transactionFingerprint(userId, p.date, p.amount, p.merchant ?? p.description, p.installment_current)
       return {
         user_id: userId,
         date: p.date,
@@ -158,16 +160,34 @@ export async function POST(req: NextRequest) {
         is_installment: p.is_installment,
         installment_current: p.installment_current,
         installment_total: p.installment_total,
+        fingerprint: fp,
       }
     })
 
+    let newRows = rows
     if (rows.length > 0) {
-      await admin.from('transactions').insert(rows)
+      const fps = rows.map(r => r.fingerprint)
+      const { data: existing } = await admin
+        .from('transactions')
+        .select('fingerprint')
+        .eq('user_id', userId)
+        .in('fingerprint', fps)
+      const existingSet = new Set(existing?.map(e => e.fingerprint) ?? [])
+      const seenInBatch = new Set<string>()
+      newRows = rows.filter(r => {
+        if (existingSet.has(r.fingerprint) || seenInBatch.has(r.fingerprint)) return false
+        seenInBatch.add(r.fingerprint)
+        return true
+      })
+    }
+
+    if (newRows.length > 0) {
+      await admin.from('transactions').insert(newRows)
     }
 
     await admin
       .from('pdf_imports')
-      .update({ status: 'completed', total_transactions: parsed.length, imported_count: rows.length, reference_month: referenceMonth })
+      .update({ status: 'completed', total_transactions: parsed.length, imported_count: newRows.length, reference_month: referenceMonth })
       .eq('id', importId)
 
     // Cálculo do total importado
