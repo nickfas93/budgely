@@ -88,14 +88,16 @@ export default function InvestmentsPage() {
 
   // Quotes
   const tickers = assets.map(a => a.ticker).join(",");
-  const { data: quotesData } = useQuery<{ quotes: Record<string, QuoteData>; ibov: number | null; selic: number | null }>({
+  const { data: quotesData, isError: quotesError } = useQuery<{ quotes: Record<string, QuoteData>; ibov: number | null; selic: number | null }>({
     queryKey: ["investment-quotes", tickers],
     enabled: assets.length > 0,
     refetchInterval: 15 * 60 * 1000,
+    retry: 1,
     queryFn: async () => {
       const res = await fetch(`/api/investments/quotes?tickers=${encodeURIComponent(tickers)}`);
-      if (!res.ok) throw new Error("Falha ao buscar cotações");
-      return res.json();
+      const data = await res.json() as { quotes?: Record<string, QuoteData>; ibov?: number | null; selic?: number | null; error?: string };
+      if (!res.ok || data.error) throw new Error(data.error ?? "Falha ao buscar cotações");
+      return data as { quotes: Record<string, QuoteData>; ibov: number | null; selic: number | null };
     },
   });
 
@@ -219,6 +221,14 @@ export default function InvestmentsPage() {
           + Adicionar ativo
         </button>
       </div>
+
+      {/* Quotes error banner */}
+      {quotesError && (
+        <div className="rounded-xl px-5 py-3 flex items-center gap-3 text-sm" style={{ background: "#fff7ed", border: "1px solid #fed7aa", color: "#c2410c" }}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <span>Não foi possível carregar cotações da Brapi. Verifique os logs do servidor para detalhes.</span>
+        </div>
+      )}
 
       {/* Add form */}
       {showAdd && (

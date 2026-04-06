@@ -44,16 +44,22 @@ async function fetchQuotes(tickers: string[]): Promise<Map<string, { price: numb
       ? `https://brapi.dev/api/quote/${stale.join(',')}?token=${token}`
       : `https://brapi.dev/api/quote/${stale.join(',')}`
 
-    const res = await fetch(url, { next: { revalidate: 0 } })
-    if (res.ok) {
-      const data = (await res.json()) as BrapiResponse
-      for (const q of data.results ?? []) {
-        cache.set(q.symbol, {
-          price: q.regularMarketPrice,
-          changePercent: q.regularMarketChangePercent,
-          cachedAt: now,
-        })
+    try {
+      const res = await fetch(url, { cache: 'no-store' })
+      const data = (await res.json()) as BrapiResponse & { error?: boolean; message?: string }
+      if (!res.ok || data.error) {
+        console.error('[Brapi] quote error:', res.status, data.message ?? JSON.stringify(data))
+      } else {
+        for (const q of data.results ?? []) {
+          cache.set(q.symbol, {
+            price: q.regularMarketPrice,
+            changePercent: q.regularMarketChangePercent,
+            cachedAt: now,
+          })
+        }
       }
+    } catch (err) {
+      console.error('[Brapi] fetch failed:', err)
     }
   }
 
@@ -75,9 +81,12 @@ async function fetchIbov(): Promise<number | null> {
     const url = token
       ? `https://brapi.dev/api/quote/%5EBVSP?token=${token}`
       : `https://brapi.dev/api/quote/%5EBVSP`
-    const res = await fetch(url, { next: { revalidate: 0 } })
-    if (!res.ok) return null
-    const data = (await res.json()) as BrapiResponse
+    const res = await fetch(url, { cache: 'no-store' })
+    const data = (await res.json()) as BrapiResponse & { error?: boolean; message?: string }
+    if (!res.ok || data.error) {
+      console.error('[Brapi] ibov error:', res.status, data.message)
+      return null
+    }
     const pct = data.results?.[0]?.regularMarketChangePercent ?? null
     if (pct !== null) ibovCache = { changePercent: pct, cachedAt: now }
     return pct
@@ -96,7 +105,7 @@ async function fetchSelic(): Promise<number | null> {
     const url = token
       ? `https://brapi.dev/api/v2/prime-rate?token=${token}`
       : `https://brapi.dev/api/v2/prime-rate`
-    const res = await fetch(url, { next: { revalidate: 0 } })
+    const res = await fetch(url, { cache: 'no-store' })
     if (!res.ok) return null
     const data = (await res.json()) as { 'prime-rate'?: { type: string; annualRate: string }[] }
     const entry = data['prime-rate']?.find(r => r.type === 'Selic' || r.type === 'CDI')
