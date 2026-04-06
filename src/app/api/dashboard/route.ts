@@ -57,6 +57,8 @@ export async function GET(req: Request) {
       .from('transactions')
       .select('amount')
       .eq('user_id', user.id)
+      .eq('status', 'confirmed')
+      .is('deleted_at', null)
       .gte('date', start)
       .lt('date', end)
       .lt('amount', 0),
@@ -66,6 +68,8 @@ export async function GET(req: Request) {
       .from('transactions')
       .select('amount')
       .eq('user_id', user.id)
+      .eq('status', 'confirmed')
+      .is('deleted_at', null)
       .gte('date', start)
       .lt('date', end)
       .gt('amount', 0),
@@ -75,6 +79,8 @@ export async function GET(req: Request) {
       .from('transactions')
       .select('category_id, amount')
       .eq('user_id', user.id)
+      .eq('status', 'confirmed')
+      .is('deleted_at', null)
       .gte('date', start)
       .lt('date', end)
       .lt('amount', 0),
@@ -99,6 +105,8 @@ export async function GET(req: Request) {
       .from('transactions')
       .select('id, date, description, amount, category_id, source, bank')
       .eq('user_id', user.id)
+      .eq('status', 'confirmed')
+      .is('deleted_at', null)
       .order('date', { ascending: false })
       .limit(5),
 
@@ -156,6 +164,8 @@ export async function GET(req: Request) {
     .select('alelo_wallet_type, amount')
     .eq('user_id', user.id)
     .eq('source', 'pdf_alelo')
+    .eq('status', 'confirmed')
+    .is('deleted_at', null)
     .gte('date', start)
     .lt('date', end)
     .lt('amount', 0)

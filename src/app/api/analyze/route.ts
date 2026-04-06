@@ -95,6 +95,8 @@ export async function POST(req: Request) {
         .from('transactions')
         .select('amount, category_id, alelo_wallet_type, source')
         .eq('user_id', user.id)
+        .eq('status', 'confirmed')
+        .is('deleted_at', null)
         .gte('date', start)
         .lt('date', end),
 
@@ -116,6 +118,8 @@ export async function POST(req: Request) {
         .select('alelo_wallet_type, amount')
         .eq('user_id', user.id)
         .eq('source', 'pdf_alelo')
+        .eq('status', 'confirmed')
+        .is('deleted_at', null)
         .gte('date', start)
         .lt('date', end)
         .lt('amount', 0),

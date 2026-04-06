@@ -66,6 +66,8 @@ export interface Database {
           installment_total: number | null
           notes: string | null
           fingerprint: string | null
+          status: string
+          deleted_at: string | null
           created_at: string
         }
         Insert: {
@@ -87,6 +89,8 @@ export interface Database {
           installment_total?: number | null
           notes?: string | null
           fingerprint?: string | null
+          status?: string
+          deleted_at?: string | null
           created_at?: string
         }
         Update: Partial<Database['public']['Tables']['transactions']['Insert']>

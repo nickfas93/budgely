@@ -201,6 +201,7 @@ export async function POST(req: Request) {
         installment_current: p.installment_current,
         installment_total: p.installment_total,
         fingerprint: fp,
+        status: 'pending',
       }
     })
 

@@ -1,7 +1,8 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState, useEffect } from "react";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 
 const fmt = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -32,6 +33,16 @@ const BANK_LABEL: Record<string, string> = {
   alelo: "Alelo",
 };
 
+type EditRow = {
+  id: string;
+  date: string;
+  description: string;
+  merchant: string;
+  amount: string;
+  category_id: string;
+  bank: string;
+};
+
 export default function TransactionsPage() {
   const now = new Date();
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -42,6 +53,8 @@ export default function TransactionsPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [editRow, setEditRow] = useState<EditRow | null>(null);
+  const qc = useQueryClient();
   const pageSize = 50;
 
   useEffect(() => {
@@ -90,6 +103,50 @@ export default function TransactionsPage() {
     [budgets]
   );
 
+  const editMutation = useMutation({
+    mutationFn: async (row: EditRow) => {
+      const res = await fetch(`/api/transactions/${row.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date: row.date,
+          description: row.description,
+          merchant: row.merchant || null,
+          amount: parseFloat(row.amount),
+          category_id: row.category_id || null,
+          bank: row.bank || null,
+        }),
+      });
+      const json = await res.json() as { error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Falha ao atualizar");
+    },
+    onSuccess: () => {
+      toast.success("Transação atualizada.");
+      setEditRow(null);
+      void qc.invalidateQueries({ queryKey: ["transactions"] });
+      void qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
+      void qc.invalidateQueries({ queryKey: ["transactions-month-totals"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/transactions/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const json = await res.json() as { error?: string };
+        throw new Error(json.error ?? "Falha ao excluir");
+      }
+    },
+    onSuccess: () => {
+      toast.success("Transação removida.");
+      void qc.invalidateQueries({ queryKey: ["transactions"] });
+      void qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
+      void qc.invalidateQueries({ queryKey: ["transactions-month-totals"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   // All expenses for the month (unpaginated) — used for chart and % Budget
   const { data: monthExpenses = [] } = useQuery({
     queryKey: ["transactions-month-totals", userId, month],
@@ -100,6 +157,8 @@ export default function TransactionsPage() {
         .from("transactions")
         .select("category_id, amount")
         .eq("user_id", userId!)
+        .eq("status", "confirmed")
+        .is("deleted_at", null)
         .gte("date", start)
         .lte("date", end)
         .lt("amount", 0);
@@ -135,8 +194,10 @@ export default function TransactionsPage() {
       const supabase = createClient();
       let q = supabase
         .from("transactions")
-        .select("id, date, description, amount, source, bank, category_id", { count: "exact" })
+        .select("id, date, description, merchant, amount, source, bank, category_id", { count: "exact" })
         .eq("user_id", userId!)
+        .eq("status", "confirmed")
+        .is("deleted_at", null)
         .gte("date", start)
         .lte("date", end)
         .order("date", { ascending: false });
@@ -279,7 +340,7 @@ export default function TransactionsPage() {
         <table className="w-full min-w-[820px] text-sm">
           <thead>
             <tr style={{ background: "#eff4ff" }}>
-              {["Data", "Descrição", "Categoria", "Banco", "Valor", "% Budget"].map((h) => (
+              {["Data", "Descrição", "Categoria", "Banco", "Valor", "% Budget", ""].map((h) => (
                 <th key={h} className="px-5 py-4 text-left text-[11px] font-bold uppercase tracking-widest" style={{ color: "#737784" }}>
                   {h}
                 </th>
@@ -289,11 +350,11 @@ export default function TransactionsPage() {
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={6} className="px-5 py-10 text-center text-sm" style={{ color: "#737784" }}>Carregando...</td>
+                <td colSpan={7} className="px-5 py-10 text-center text-sm" style={{ color: "#737784" }}>Carregando...</td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-5 py-10 text-center text-sm" style={{ color: "#737784" }}>Nenhuma transação neste período.</td>
+                <td colSpan={7} className="px-5 py-10 text-center text-sm" style={{ color: "#737784" }}>Nenhuma transação neste período.</td>
               </tr>
             ) : (
               rows.map((row, i) => {
@@ -301,6 +362,50 @@ export default function TransactionsPage() {
                 const budget = row.category_id ? budgetMap.get(row.category_id) : undefined;
                 const spent = row.category_id ? (categoryTotals[row.category_id] ?? 0) : 0;
                 const pctBudget = budget && budget > 0 ? (spent / budget) * 100 : null;
+                const isEditing = editRow?.id === row.id;
+
+                if (isEditing && editRow) {
+                  return (
+                    <tr key={row.id} style={{ borderTop: i === 0 ? "none" : "1px solid #eff4ff", background: "#eff4ff" }}>
+                      <td className="px-2 py-2">
+                        <input type="date" value={editRow.date} onChange={e => setEditRow(r => r ? { ...r, date: e.target.value } : r)}
+                          className="w-full rounded px-2 py-1 text-xs outline-none" style={{ background: "#ffffff", color: "#0b1c30" }} />
+                      </td>
+                      <td className="px-2 py-2" colSpan={1}>
+                        <input type="text" value={editRow.description} onChange={e => setEditRow(r => r ? { ...r, description: e.target.value } : r)}
+                          className="w-full rounded px-2 py-1 text-xs outline-none" style={{ background: "#ffffff", color: "#0b1c30" }} />
+                      </td>
+                      <td className="px-2 py-2">
+                        <select value={editRow.category_id} onChange={e => setEditRow(r => r ? { ...r, category_id: e.target.value } : r)}
+                          className="w-full rounded px-2 py-1 text-xs outline-none" style={{ background: "#ffffff", color: "#0b1c30" }}>
+                          <option value="">— Sem categoria —</option>
+                          {categories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
+                        </select>
+                      </td>
+                      <td className="px-2 py-2">
+                        <input type="text" value={editRow.bank} onChange={e => setEditRow(r => r ? { ...r, bank: e.target.value } : r)}
+                          placeholder="itau, alelo..." className="w-full rounded px-2 py-1 text-xs outline-none" style={{ background: "#ffffff", color: "#0b1c30" }} />
+                      </td>
+                      <td className="px-2 py-2">
+                        <input type="number" step="0.01" value={editRow.amount} onChange={e => setEditRow(r => r ? { ...r, amount: e.target.value } : r)}
+                          className="w-full rounded px-2 py-1 text-xs outline-none" style={{ background: "#ffffff", color: "#0b1c30" }} />
+                      </td>
+                      <td className="px-2 py-2" />
+                      <td className="px-2 py-2">
+                        <div className="flex gap-2">
+                          <button onClick={() => editMutation.mutate(editRow)} disabled={editMutation.isPending}
+                            className="text-xs font-bold hover:opacity-70 disabled:opacity-40" style={{ color: "#006c49" }}>
+                            {editMutation.isPending ? "..." : "Salvar"}
+                          </button>
+                          <button onClick={() => setEditRow(null)} className="text-xs hover:opacity-70" style={{ color: "#737784" }}>
+                            Cancelar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+
                 return (
                   <tr
                     key={row.id}
@@ -351,6 +456,33 @@ export default function TransactionsPage() {
                       ) : (
                         <span style={{ color: "#c3c6d5" }}>—</span>
                       )}
+                    </td>
+                    <td className="px-5 py-3">
+                      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: 1 }}>
+                        <button
+                          onClick={() => setEditRow({
+                            id: row.id,
+                            date: row.date,
+                            description: row.description,
+                            merchant: (row as { merchant?: string | null }).merchant ?? "",
+                            amount: String(row.amount),
+                            category_id: row.category_id ?? "",
+                            bank: row.bank ?? "",
+                          })}
+                          className="text-xs font-semibold hover:opacity-70" style={{ color: "#063669" }}
+                          title="Editar"
+                        >
+                          ✎
+                        </button>
+                        <button
+                          onClick={() => { if (confirm("Remover esta transação?")) deleteMutation.mutate(row.id); }}
+                          disabled={deleteMutation.isPending}
+                          className="text-xs font-semibold hover:opacity-70 disabled:opacity-30" style={{ color: "#ba1a1a" }}
+                          title="Excluir"
+                        >
+                          ✕
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

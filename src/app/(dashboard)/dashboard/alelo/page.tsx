@@ -78,6 +78,8 @@ export default function AleloPage() {
         .select("id, date, description, merchant, amount, alelo_wallet_type, category_id")
         .eq("user_id", userId!)
         .eq("bank", "alelo")
+        .eq("status", "confirmed")
+        .is("deleted_at", null)
         .gte("date", start)
         .lte("date", end)
         .order("date", { ascending: false });
@@ -91,6 +93,22 @@ export default function AleloPage() {
       const { data } = await supabase.from("categories").select("id, slug, label, icon");
       return data ?? [];
     },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/transactions/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const json = await res.json() as { error?: string };
+        throw new Error(json.error ?? "Falha ao excluir");
+      }
+    },
+    onSuccess: () => {
+      toast.success("Transação removida.");
+      void qc.invalidateQueries({ queryKey: ["alelo-transactions"] });
+      void qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
   });
 
   const patchMutation = useMutation({
@@ -323,10 +341,18 @@ export default function AleloPage() {
                           </button>
                         </div>
                       ) : (
-                        <button onClick={() => setEditing({ txId: t.id, categoryId: t.category_id ?? "", applyToMerchant: false })}
-                          className="text-xs font-semibold hover:opacity-70" style={{ color: "#063669" }}>
-                          Editar
-                        </button>
+                        <div className="flex gap-2">
+                          <button onClick={() => setEditing({ txId: t.id, categoryId: t.category_id ?? "", applyToMerchant: false })}
+                            className="text-xs font-semibold hover:opacity-70" style={{ color: "#063669" }}>
+                            Editar
+                          </button>
+                          <button
+                            onClick={() => { if (confirm("Remover esta transação?")) deleteMutation.mutate(t.id); }}
+                            disabled={deleteMutation.isPending}
+                            className="text-xs font-semibold hover:opacity-70 disabled:opacity-30" style={{ color: "#ba1a1a" }}>
+                            ✕
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
