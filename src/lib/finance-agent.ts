@@ -96,7 +96,62 @@ Use estes indicadores como régua silenciosa ao analisar dados:
 7. Use **R$** com valores formatados (ex: R$ 1.250,00) e **%** para percentuais.
 8. Responda sempre em **português brasileiro**.`
 
+// ─── Tipos de insights proativos ───────────────────────────────────────────────
+
+export interface ProactiveInsight {
+  type: 'warning' | 'positive' | 'info' | 'tip'
+  title: string
+  body: string
+}
+
+const INSIGHTS_SYSTEM_PROMPT = `Você é Fin, assistente financeiro do Budgely.
+Analise os dados financeiros fornecidos e gere exatamente 4 insights proativos.
+Responda SOMENTE com um array JSON válido, sem markdown, sem texto adicional.
+
+Formato obrigatório:
+[
+  {"type":"warning|positive|info|tip","title":"título curto (máx 8 palavras)","body":"1-2 frases com dados concretos"}
+]
+
+Regras:
+- Use "warning" para gastos excessivos, orçamento ultrapassado, poupança baixa
+- Use "positive" para metas cumpridas, poupança acima de 10%, orçamento respeitado
+- Use "info" para tendências, comparações com mês anterior
+- Use "tip" para sugestões acionáveis específicas
+- Cite sempre valores reais em R$
+- Nunca invente dados
+- Responda em português brasileiro`
+
 // ─── Função principal ───────────────────────────────────────────────────────────
+
+export async function generateInsights(
+  current: MonthSnapshot,
+  previous?: MonthSnapshot
+): Promise<ProactiveInsight[]> {
+  const sections: string[] = ['## Mês atual', buildMonthSummary(current)]
+  if (previous) {
+    sections.unshift('## Mês anterior', buildMonthSummary(previous))
+  }
+
+  const message = await client.messages.create({
+    model: MODEL,
+    max_tokens: 800,
+    system: INSIGHTS_SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: sections.join('\n\n') }],
+  })
+
+  const block = message.content[0]
+  if (block.type !== 'text') throw new Error('Resposta inesperada da API Claude')
+
+  try {
+    return JSON.parse(block.text) as ProactiveInsight[]
+  } catch {
+    // fallback: try to extract JSON array from text
+    const match = block.text.match(/\[[\s\S]*\]/)
+    if (match) return JSON.parse(match[0]) as ProactiveInsight[]
+    throw new Error('Não foi possível parsear insights: ' + block.text.slice(0, 200))
+  }
+}
 
 export async function analyzeFinances(ctx: FinancialContext): Promise<string> {
   const userContent = buildUserMessage(ctx)

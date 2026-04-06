@@ -2,8 +2,34 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+
+const TIPO_OPTIONS = [
+  { value: "Credito", label: "Crédito" },
+  { value: "Debito", label: "Débito" },
+  { value: "VA", label: "Vale Alimentação" },
+  { value: "VR", label: "Vale Refeição" },
+];
+const BANK_OPTIONS_MANUAL = [
+  { value: "itau", label: "Itaú" },
+  { value: "btg", label: "BTG" },
+  { value: "inter", label: "Inter" },
+  { value: "alelo", label: "Alelo" },
+  { value: "outro", label: "Outro" },
+];
+const emptyManual = {
+  date: new Date().toISOString().slice(0, 10),
+  amount: "",
+  description: "",
+  merchant: "",
+  category_id: "",
+  tipo: "Credito",
+  bank: "itau",
+  notes: "",
+};
 
 const navItems = [
   {
@@ -98,6 +124,50 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
+  const qc = useQueryClient();
+  const [showNewTx, setShowNewTx] = useState(false);
+  const [form, setForm] = useState(emptyManual);
+
+  const { data: categories = [] } = useQuery({
+    queryKey: ["categories"],
+    queryFn: async () => {
+      const { data } = await supabase.from("categories").select("id, label, icon");
+      return data ?? [];
+    },
+    enabled: showNewTx,
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const amount = parseFloat(form.amount);
+      if (!form.date || isNaN(amount) || !form.description.trim()) throw new Error("Preencha data, valor e descrição.");
+      const res = await fetch("/api/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date: form.date,
+          amount,
+          description: form.description.trim(),
+          merchant: form.merchant.trim() || undefined,
+          category_id: form.category_id || undefined,
+          tipo: form.tipo,
+          bank: form.bank,
+          notes: form.notes.trim() || undefined,
+        }),
+      });
+      const json = await res.json() as { error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Falha ao salvar");
+    },
+    onSuccess: () => {
+      toast.success("Lançamento salvo!");
+      setForm(emptyManual);
+      setShowNewTx(false);
+      void qc.invalidateQueries({ queryKey: ["transactions"] });
+      void qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
+      void qc.invalidateQueries({ queryKey: ["transactions-month-totals"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const { data: profile } = useQuery({
     queryKey: ["layout-profile"],
@@ -178,6 +248,7 @@ export default function DashboardLayout({
         {/* Bottom actions */}
         <div className="mt-auto space-y-3 border-t pt-4" style={{ borderColor: "#e5eeff" }}>
           <button
+            onClick={() => setShowNewTx(true)}
             className="w-full py-3 px-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-opacity hover:opacity-90"
             style={{ background: "#006c49", color: "#ffffff" }}
           >
@@ -250,6 +321,72 @@ export default function DashboardLayout({
 
         <main className="flex-1 p-8">{children}</main>
       </div>
+
+      {/* Novo Lançamento Modal */}
+      {showNewTx && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.45)" }}>
+          <div className="w-full max-w-lg rounded-2xl shadow-2xl" style={{ background: "#ffffff" }}>
+            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: "#eff4ff" }}>
+              <h2 className="font-bold text-base" style={{ color: "#0b1c30" }}>Novo Lançamento</h2>
+              <button onClick={() => { setShowNewTx(false); setForm(emptyManual); }} className="text-xl font-bold hover:opacity-60" style={{ color: "#737784" }}>×</button>
+            </div>
+            <div className="px-6 py-5 grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider mb-1" style={{ color: "#434653" }}>Data *</label>
+                <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none" style={{ background: "#eff4ff", color: "#0b1c30", border: "none" }} />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider mb-1" style={{ color: "#434653" }}>Valor (R$) *</label>
+                <input type="number" step="0.01" placeholder="-42.90" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none" style={{ background: "#eff4ff", color: "#0b1c30", border: "none" }} />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-bold uppercase tracking-wider mb-1" style={{ color: "#434653" }}>Descrição *</label>
+                <input type="text" placeholder="Ex: Almoço restaurante" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none" style={{ background: "#eff4ff", color: "#0b1c30", border: "none" }} />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider mb-1" style={{ color: "#434653" }}>Estabelecimento</label>
+                <input type="text" placeholder="Ex: McDonald's" value={form.merchant} onChange={e => setForm(f => ({ ...f, merchant: e.target.value }))}
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none" style={{ background: "#eff4ff", color: "#0b1c30", border: "none" }} />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider mb-1" style={{ color: "#434653" }}>Categoria</label>
+                <select value={form.category_id} onChange={e => setForm(f => ({ ...f, category_id: e.target.value }))}
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none" style={{ background: "#eff4ff", color: "#0b1c30", border: "none" }}>
+                  <option value="">— Sem categoria —</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider mb-1" style={{ color: "#434653" }}>Tipo</label>
+                <select value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value }))}
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none" style={{ background: "#eff4ff", color: "#0b1c30", border: "none" }}>
+                  {TIPO_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider mb-1" style={{ color: "#434653" }}>Banco</label>
+                <select value={form.bank} onChange={e => setForm(f => ({ ...f, bank: e.target.value }))}
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none" style={{ background: "#eff4ff", color: "#0b1c30", border: "none" }}>
+                  {BANK_OPTIONS_MANUAL.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 pb-5">
+              <button onClick={() => { setShowNewTx(false); setForm(emptyManual); }}
+                className="rounded-xl px-5 py-2.5 text-sm font-semibold border" style={{ color: "#434653", borderColor: "#c3c6d5" }}>
+                Cancelar
+              </button>
+              <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
+                className="rounded-xl px-5 py-2.5 text-sm font-bold hover:opacity-90 disabled:opacity-50" style={{ background: "#006c49", color: "#ffffff" }}>
+                {saveMutation.isPending ? "Salvando..." : "Salvar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

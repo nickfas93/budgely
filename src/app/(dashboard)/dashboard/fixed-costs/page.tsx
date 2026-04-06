@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 
 const brl = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
@@ -232,6 +233,20 @@ export default function FixedCostsPage() {
   );
   const salaryRemaining = monthlyIncome - totalAllocated;
 
+  const pieData = useMemo(() => {
+    const items = categories
+      .filter((cat) => (budgetDraft[cat.id] ?? 0) > 0)
+      .map((cat) => ({
+        name: cat.label,
+        value: budgetDraft[cat.id] ?? 0,
+        color: cat.color ?? "#063669",
+      }));
+    if (salaryRemaining > 0) {
+      items.push({ name: "Disponível", value: salaryRemaining, color: "#e2e8f0" });
+    }
+    return items;
+  }, [categories, budgetDraft, salaryRemaining]);
+
   return (
     <div className="max-w-7xl mx-auto space-y-8">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -399,7 +414,7 @@ export default function FixedCostsPage() {
 
             {/* Summary sidebar */}
             <div className="lg:col-span-4">
-              <div className="sticky top-24">
+              <div className="sticky top-24 space-y-4">
                 <div className="relative overflow-hidden rounded-3xl p-8 text-white shadow-2xl" style={{ background: "#063669" }}>
                   <div className="absolute -bottom-10 -right-10 w-48 h-48 rounded-full blur-3xl pointer-events-none" style={{ background: "rgba(108,248,187,0.15)" }} />
                   <div className="relative z-10 space-y-5">
@@ -440,6 +455,48 @@ export default function FixedCostsPage() {
                     </button>
                   </div>
                 </div>
+
+                {/* Distribution donut chart */}
+                {pieData.filter(d => d.name !== "Disponível").length > 0 && (
+                  <div className="rounded-2xl p-6 border" style={{ background: "#ffffff", borderColor: "rgba(195,198,213,0.2)" }}>
+                    <h4 className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: "#737784" }}>Distribuição</h4>
+                    <ResponsiveContainer width="100%" height={180}>
+                      <PieChart>
+                        <Pie
+                          data={pieData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={50}
+                          outerRadius={80}
+                          dataKey="value"
+                          strokeWidth={2}
+                          stroke="#ffffff"
+                        >
+                          {pieData.map((entry, idx) => (
+                            <Cell key={idx} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(v) => [brl(Number(v ?? 0)), ""]}
+                          contentStyle={{ borderRadius: 12, border: "none", boxShadow: "0 4px 16px rgba(0,0,0,0.08)", fontSize: 12 }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="mt-3 space-y-2">
+                      {pieData.filter(d => d.name !== "Disponível").map((item, idx) => (
+                        <div key={idx} className="flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: item.color }} />
+                            <span style={{ color: "#434653" }}>{item.name}</span>
+                          </div>
+                          <span className="font-semibold" style={{ color: "#0b1c30" }}>
+                            {monthlyIncome > 0 ? `${((item.value / monthlyIncome) * 100).toFixed(0)}%` : brl(item.value)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -440,7 +440,7 @@ export default function TransactionsPage() {
                     <td className="px-5 py-3">
                       {pctBudget !== null ? (
                         <div className="flex items-center gap-2">
-                          <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ background: "#eff4ff" }}>
+                          <div className="w-14 h-1.5 rounded-full overflow-hidden" style={{ background: "#eff4ff" }}>
                             <div
                               className="h-full rounded-full"
                               style={{
@@ -449,8 +449,17 @@ export default function TransactionsPage() {
                               }}
                             />
                           </div>
-                          <span className="text-xs font-semibold" style={{ color: pctBudget > 100 ? "#ba1a1a" : "#737784" }}>
-                            {pctBudget.toFixed(0)}%
+                          <span
+                            className="text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                            style={
+                              pctBudget > 100
+                                ? { background: "#ffdad6", color: "#ba1a1a" }
+                                : pctBudget > 80
+                                ? { background: "#fef3c7", color: "#d97706" }
+                                : { background: "#dcfce7", color: "#166534" }
+                            }
+                          >
+                            {pctBudget > 100 ? "Excedido" : pctBudget > 80 ? "Atenção" : "OK"}
                           </span>
                         </div>
                       ) : (

@@ -4,8 +4,9 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip,
+  BarChart, Bar, XAxis, YAxis, Tooltip, Cell,
   ResponsiveContainer, LineChart, Line, CartesianGrid,
+  ComposedChart, ReferenceLine,
 } from "recharts";
 
 type DashboardSummary = {
@@ -163,6 +164,20 @@ export default function DashboardOverviewPage() {
     },
   });
 
+  // Proactive AI insights (cached 30min)
+  const { data: insightsData, isFetching: insightsFetching, refetch: refetchInsights } = useQuery<{
+    insights: { type: string; title: string; body: string }[]
+  }>({
+    queryKey: ["proactive-insights"],
+    queryFn: async () => {
+      const res = await fetch("/api/insights");
+      if (!res.ok) throw new Error("Falha ao carregar insights");
+      return res.json();
+    },
+    staleTime: 1000 * 60 * 30,
+    enabled: false, // manual trigger only
+  });
+
   // Computed: summary by bank
   const bankTotals = useMemo(() => {
     const map: Record<string, number> = {};
@@ -216,6 +231,33 @@ export default function DashboardOverviewPage() {
 
   // Summary cards — mix local totals + API salary/alelo
   const salary = summary?.monthly_salary ?? 0;
+
+  // Waterfall cashflow: salary → fixed costs → categories → residual
+  const waterfallData = useMemo(() => {
+    if (!summary || salary === 0) return [];
+    const topCats = [...categoryTotals].sort((a, b) => b.total - a.total).slice(0, 4);
+    const topTotal = topCats.reduce((s, c) => s + c.total, 0);
+    const outros = totalMonth - topTotal;
+    const residual = salary - totalMonth;
+
+    const steps: { name: string; value: number; base: number; color: string }[] = [];
+    let base = 0;
+
+    steps.push({ name: "Salário", value: salary, base: 0, color: "#063669" });
+    base = salary;
+
+    for (const c of topCats) {
+      base -= c.total;
+      steps.push({ name: c.label.slice(0, 10), value: -c.total, base: base + c.total, color: "#274e82" });
+    }
+    if (outros > 0) {
+      base -= outros;
+      steps.push({ name: "Outros", value: -outros, base: base + outros, color: "#737784" });
+    }
+    steps.push({ name: "Saldo", value: residual, base: 0, color: residual >= 0 ? "#006c49" : "#ba1a1a" });
+
+    return steps;
+  }, [summary, salary, categoryTotals, totalMonth]);
   const aleloData = summary?.alelo_budgets;
   const saldoDisponivel = salary > 0 ? salary - totalMonth : null;
   const saldoVA = aleloData ? aleloData.alimentacao_budget - aleloData.spent_alimentacao : null;
@@ -233,6 +275,13 @@ export default function DashboardOverviewPage() {
       sub: null,
     })),
   ].slice(0, 4);
+
+  // Patrimônio: investimentos + saldos alelo
+  const portfolioValue = 0; // populated if investments page data is available
+  const patrimonioTotal =
+    portfolioValue +
+    (saldoVA !== null ? saldoVA : 0) +
+    (saldoVR !== null ? saldoVR : 0);
 
   // LLM insights parsed
   const insights: string[] = useMemo(() => {
@@ -276,26 +325,51 @@ export default function DashboardOverviewPage() {
           </div>
         </div>
 
-        <div className="rounded-2xl p-6 border flex flex-col justify-between" style={{ background: "#eff4ff", borderColor: "rgba(195,198,213,0.1)" }}>
-          <div>
-            <div className="flex items-center gap-2 mb-4">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#063669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/></svg>
-              <h3 className="font-bold" style={{ color: "#063669" }}>Insight do Dia</h3>
+        <div className="flex flex-col gap-4">
+          {/* Insight do Dia */}
+          <div className="rounded-2xl p-5 border flex flex-col justify-between flex-1" style={{ background: "#eff4ff", borderColor: "rgba(195,198,213,0.1)" }}>
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#063669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/></svg>
+                <h3 className="font-bold text-sm" style={{ color: "#063669" }}>Insight do Dia</h3>
+              </div>
+              {insights.length > 0 ? (
+                <p className="text-sm leading-relaxed" style={{ color: "#434653" }}>{insights[0]}</p>
+              ) : (
+                <p className="text-sm leading-relaxed" style={{ color: "#737784" }}>
+                  {transactions.length === 0 ? "Importe seus extratos para começar." : "Acesse Análise IA para gerar insights."}
+                </p>
+              )}
             </div>
-            {insights.length > 0 ? (
-              <p className="text-sm leading-relaxed" style={{ color: "#434653" }}>{insights[0]}</p>
-            ) : (
-              <p className="text-sm leading-relaxed" style={{ color: "#737784" }}>
-                {transactions.length === 0
-                  ? "Importe seus extratos para começar a receber análises."
-                  : "Análise IA ainda não gerada. Acesse Análise IA para gerar."}
-              </p>
-            )}
+            <a href="/dashboard/analysis" className="mt-4 text-xs font-bold flex items-center gap-1 hover:underline" style={{ color: "#063669" }}>
+              Ver análise completa
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+            </a>
           </div>
-          <a href="/dashboard/analysis" className="mt-6 text-sm font-bold flex items-center gap-1 hover:underline" style={{ color: "#063669" }}>
-            Ver análise completa
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-          </a>
+
+          {/* Saldos VA / VR */}
+          {aleloData && (
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: "Saldo VA", value: saldoVA ?? 0, budget: aleloData.alimentacao_budget, color: "#006c49" },
+                { label: "Saldo VR", value: saldoVR ?? 0, budget: aleloData.refeicao_budget, color: "#f59e0b" },
+              ].map(card => {
+                const pct = card.budget > 0 ? Math.min(((card.budget - card.value) / card.budget) * 100, 100) : 0;
+                return (
+                  <div key={card.label} className="rounded-xl p-4 border" style={{ background: "#ffffff", borderColor: "rgba(195,198,213,0.15)" }}>
+                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "#737784" }}>{card.label}</p>
+                    <p className="text-lg font-extrabold tabular-nums" style={{ fontFamily: "var(--font-manrope), Manrope, sans-serif", color: card.value < 0 ? "#ba1a1a" : "#0b1c30" }}>
+                      {brl(card.value)}
+                    </p>
+                    <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background: "#eff4ff" }}>
+                      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: card.color }} />
+                    </div>
+                    <p className="text-[10px] mt-1" style={{ color: "#737784" }}>de {brl(card.budget)}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </section>
 
@@ -358,6 +432,124 @@ export default function DashboardOverviewPage() {
         </div>
       </section>
 
+      {/* Waterfall Cashflow */}
+      {waterfallData.length > 0 && (
+        <section className="rounded-xl p-6 border" style={{ background: "#ffffff", borderColor: "rgba(195,198,213,0.15)" }}>
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h3 className="font-bold text-base" style={{ color: "#0b1c30" }}>Fluxo de Caixa</h3>
+              <p className="text-xs mt-0.5" style={{ color: "#737784" }}>Salário → gastos → saldo residual</p>
+            </div>
+            <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#737784" }}>{monthLabel}</span>
+          </div>
+          <ResponsiveContainer width="100%" height={220}>
+            <ComposedChart data={waterfallData} margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
+              <CartesianGrid vertical={false} stroke="#e5eeff" />
+              <XAxis dataKey="name" tick={{ fill: "#737784", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={(v) => `R$${(Math.abs(v) / 1000).toFixed(0)}k`} tick={{ fill: "#737784", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <Tooltip
+                formatter={(v, name) => [brl(Math.abs(Number(v ?? 0))), name === "base" ? "" : String(name)]}
+                contentStyle={{ background: "#ffffff", border: "1px solid #e5eeff", borderRadius: 8, fontSize: 12 }}
+              />
+              <ReferenceLine y={0} stroke="#e5eeff" />
+              <Bar dataKey="base" stackId="wf" fill="transparent" />
+              <Bar dataKey="value" stackId="wf" radius={[4, 4, 0, 0]}>
+                {waterfallData.map((entry, i) => (
+                  <Cell key={i} fill={entry.color} />
+                ))}
+              </Bar>
+            </ComposedChart>
+          </ResponsiveContainer>
+        </section>
+      )}
+
+      {/* Proactive AI Insights */}
+      <section className="rounded-2xl p-6 border" style={{ background: "#ffffff", borderColor: "rgba(195,198,213,0.15)" }}>
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs" style={{ background: "#274e82", color: "#9cc0fb" }}>Fin</div>
+            <div>
+              <h3 className="font-bold text-base" style={{ color: "#0b1c30" }}>Insights Financeiros</h3>
+              <p className="text-xs" style={{ color: "#737784" }}>Análise proativa do seu mês</p>
+            </div>
+          </div>
+          <button
+            onClick={() => void refetchInsights()}
+            disabled={insightsFetching}
+            className="flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-opacity hover:opacity-80 disabled:opacity-40"
+            style={{ background: "#eff4ff", color: "#063669" }}
+          >
+            {insightsFetching ? (
+              <>
+                <svg className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>
+                Analisando...
+              </>
+            ) : (
+              <>
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
+                {insightsData ? "Atualizar" : "Gerar Insights"}
+              </>
+            )}
+          </button>
+        </div>
+
+        {!insightsData && !insightsFetching && (
+          <div className="flex flex-col items-center justify-center py-10 gap-3">
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center font-black text-base" style={{ background: "#eff4ff", color: "#274e82" }}>Fin</div>
+            <p className="text-sm text-center max-w-sm" style={{ color: "#737784" }}>
+              Clique em "Gerar Insights" para que o Fin analise seus gastos e traga observações proativas sobre o mês atual.
+            </p>
+          </div>
+        )}
+
+        {insightsFetching && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {[0, 1, 2, 3].map(i => (
+              <div key={i} className="rounded-xl p-4 animate-pulse" style={{ background: "#eff4ff", height: 88 }} />
+            ))}
+          </div>
+        )}
+
+        {insightsData && !insightsFetching && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {insightsData.insights.map((ins, i) => {
+              const styles: Record<string, { bg: string; accent: string; icon: React.ReactNode }> = {
+                warning: {
+                  bg: "#fff7ed",
+                  accent: "#c2410c",
+                  icon: <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c2410c" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
+                },
+                positive: {
+                  bg: "#f0fdf4",
+                  accent: "#006c49",
+                  icon: <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#006c49" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>,
+                },
+                info: {
+                  bg: "#eff4ff",
+                  accent: "#063669",
+                  icon: <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#063669" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
+                },
+                tip: {
+                  bg: "#faf5ff",
+                  accent: "#7c3aed",
+                  icon: <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>,
+                },
+              };
+              const s = styles[ins.type] ?? styles.info;
+              return (
+                <div key={i} className="rounded-xl p-4" style={{ background: s.bg }}>
+                  <div className="flex items-start gap-2 mb-1.5">
+                    {s.icon}
+                    <span className="text-sm font-bold leading-tight" style={{ color: s.accent }}>{ins.title}</span>
+                  </div>
+                  <p className="text-xs leading-relaxed pl-5" style={{ color: "#434653" }}>{ins.body}</p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
       {/* Top categories execution */}
       {topCategories.length > 0 && (
         <section className="rounded-xl p-8" style={{ background: "#eff4ff" }}>
@@ -379,7 +571,23 @@ export default function DashboardOverviewPage() {
                     <span className="text-sm font-bold flex items-center gap-2" style={{ color: "#0b1c30" }}>
                       <span>{c.icon}</span>{c.label}
                     </span>
-                    <span className="text-xs font-medium" style={{ color: "#434653" }}>{brl(c.total)}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium" style={{ color: "#434653" }}>{brl(c.total)}</span>
+                      {(() => {
+                        const budget = summary?.budgets.find(b => {
+                          const cat = summary.categories.find(cat => cat.label === c.label);
+                          return cat && b.category_id === cat.id;
+                        })?.amount;
+                        if (!budget) return null;
+                        const pct = (c.total / budget) * 100;
+                        return (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                            style={pct > 100 ? { background: "#ffdad6", color: "#ba1a1a" } : pct > 80 ? { background: "#fef3c7", color: "#d97706" } : { background: "#dcfce7", color: "#166534" }}>
+                            {pct > 100 ? "Excedido" : pct > 80 ? "Atenção" : "No limite"}
+                          </span>
+                        );
+                      })()}
+                    </div>
                   </div>
                   <div className="h-3 w-full rounded-full overflow-hidden" style={{ background: "#ffffff" }}>
                     <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "#063669" }} />
