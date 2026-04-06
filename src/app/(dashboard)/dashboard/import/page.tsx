@@ -60,6 +60,7 @@ type ReviewTx = {
   _bank?: string;
   _editing?: boolean;
   _deleted?: boolean;
+  _applyToMerchant?: boolean;
 };
 
 function statusBadge(status: string) {
@@ -75,7 +76,16 @@ export default function ImportPdfPage() {
   const [activeTab, setActiveTab] = useState<"pdf" | "manual">("pdf");
   const [bank, setBank] = useState<BankValue>("itau_credit");
   const [file, setFile] = useState<File | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const [manualForm, setManualForm] = useState(emptyManual);
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    const dropped = e.dataTransfer.files[0];
+    if (dropped && dropped.type === "application/pdf") setFile(dropped);
+    else toast.error("Apenas arquivos PDF são aceitos.");
+  }
 
   // Review modal state
   const [reviewImportId, setReviewImportId] = useState<string | null>(null);
@@ -137,6 +147,40 @@ export default function ImportPdfPage() {
   // Save single row edit in review
   const saveRowMutation = useMutation({
     mutationFn: async (row: ReviewTx) => {
+      const applyToMerchant = !!row._applyToMerchant && !!row._category_id;
+
+      if (applyToMerchant) {
+        // 1. Batch: aplica category_id em todas do mesmo estabelecimento
+        const batchRes = await fetch(`/api/transactions/${row.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            category_id: row._category_id,
+            apply_to_merchant: true,
+          }),
+        });
+        const batchJson = await batchRes.json() as { error?: string; updated_count?: number };
+        if (!batchRes.ok) throw new Error(batchJson.error ?? "Falha ao aplicar em massa");
+
+        // 2. Single: salva os outros campos somente nesta transação
+        const singleRes = await fetch(`/api/transactions/${row.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            date: row._date,
+            description: row._description,
+            merchant: row._merchant || null,
+            amount: parseFloat(row._amount ?? "0"),
+            bank: row._bank || null,
+          }),
+        });
+        const singleJson = await singleRes.json() as { error?: string };
+        if (!singleRes.ok) throw new Error(singleJson.error ?? "Falha ao salvar campos individuais");
+
+        return { updated_count: batchJson.updated_count ?? 1 };
+      }
+
+      // Sem apply_to_merchant: salva tudo em uma única chamada
       const res = await fetch(`/api/transactions/${row.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -151,9 +195,14 @@ export default function ImportPdfPage() {
       });
       const json = await res.json() as { error?: string };
       if (!res.ok) throw new Error(json.error ?? "Falha ao salvar");
+      return { updated_count: 1 };
     },
-    onSuccess: (_, row) => {
-      setReviewRows(rows => rows.map(r => r.id === row.id ? { ...r, _editing: false } : r));
+    onSuccess: (data, row) => {
+      const count = data?.updated_count ?? 1;
+      if (row._applyToMerchant && count > 1) {
+        toast.success(`Categoria aplicada a ${count} transações de "${row._merchant || row.description}".`);
+      }
+      setReviewRows(rows => rows.map(r => r.id === row.id ? { ...r, _editing: false, _applyToMerchant: false } : r));
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -354,12 +403,23 @@ export default function ImportPdfPage() {
               <div>
                 <label htmlFor="pdf" className="block text-xs font-bold uppercase tracking-wider mb-1" style={{ color: "#434653" }}>Arquivo PDF</label>
                 <div
-                  className="w-full rounded-lg px-4 py-2 text-sm flex items-center gap-3 cursor-pointer transition-colors"
-                  style={{ background: "#eff4ff", border: "2px dashed rgba(195,198,213,0.5)" }}
+                  className="w-full rounded-lg px-4 py-2 text-sm flex items-center gap-3 cursor-pointer transition-all"
+                  style={{
+                    background: dragOver ? "#e0eaff" : file ? "#edfbf4" : "#eff4ff",
+                    border: dragOver ? "2px dashed #063669" : file ? "2px dashed #006c49" : "2px dashed rgba(195,198,213,0.5)",
+                  }}
                   onClick={() => document.getElementById("pdf-input")?.click()}
+                  onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={handleDrop}
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737784" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                  <span style={{ color: file ? "#0b1c30" : "#737784" }}>{file ? file.name : "Clique para selecionar..."}</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={file ? "#006c49" : "#737784"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  <span style={{ color: file ? "#006c49" : dragOver ? "#063669" : "#737784" }}>
+                    {dragOver ? "Solte o arquivo aqui" : file ? file.name : "Clique ou arraste o PDF aqui"}
+                  </span>
+                  {file && (
+                    <button type="button" onClick={e => { e.stopPropagation(); setFile(null); }} className="ml-auto text-xs hover:opacity-70" style={{ color: "#ba1a1a" }}>✕</button>
+                  )}
                   <input id="pdf-input" type="file" accept=".pdf,application/pdf" disabled={busy} className="hidden"
                     onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
                 </div>
@@ -487,15 +547,32 @@ export default function ImportPdfPage() {
                             className="w-full rounded px-2 py-1 text-xs outline-none" style={{ background: "#ffffff", color: "#0b1c30" }} />
                         </td>
                         <td className="px-2 py-2">
-                          <div className="flex gap-2 whitespace-nowrap">
-                            <button onClick={() => saveRowMutation.mutate(row)} disabled={saveRowMutation.isPending}
-                              className="text-xs font-bold hover:opacity-70 disabled:opacity-40" style={{ color: "#006c49" }}>
-                              {saveRowMutation.isPending ? "..." : "Salvar"}
-                            </button>
-                            <button onClick={() => setReviewRows(rs => rs.map(r => r.id === row.id ? { ...r, _editing: false } : r))}
-                              className="text-xs hover:opacity-70" style={{ color: "#737784" }}>
-                              Cancelar
-                            </button>
+                          <div className="flex flex-col gap-2">
+                            {row._category_id && (
+                              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={!!row._applyToMerchant}
+                                  onChange={e => setReviewRows(rs => rs.map(r => r.id === row.id ? { ...r, _applyToMerchant: e.target.checked } : r))}
+                                  className="rounded"
+                                  style={{ accentColor: "#063669" }}
+                                />
+                                <span className="text-[10px] leading-tight whitespace-normal" style={{ color: "#434653" }}>
+                                  Aplicar categoria a todos de<br />
+                                  <strong style={{ color: "#0b1c30" }}>{row._merchant || row.description}</strong>
+                                </span>
+                              </label>
+                            )}
+                            <div className="flex gap-2 whitespace-nowrap">
+                              <button onClick={() => saveRowMutation.mutate(row)} disabled={saveRowMutation.isPending}
+                                className="text-xs font-bold hover:opacity-70 disabled:opacity-40" style={{ color: "#006c49" }}>
+                                {saveRowMutation.isPending ? "..." : "Salvar"}
+                              </button>
+                              <button onClick={() => setReviewRows(rs => rs.map(r => r.id === row.id ? { ...r, _editing: false, _applyToMerchant: false } : r))}
+                                className="text-xs hover:opacity-70" style={{ color: "#737784" }}>
+                                Cancelar
+                              </button>
+                            </div>
                           </div>
                         </td>
                       </tr>
