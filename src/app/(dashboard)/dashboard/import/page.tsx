@@ -334,48 +334,80 @@ export default function ImportPdfPage() {
 
       {activeTab === "pdf" && (
         <>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
-              <div className="flex-1">
-                <label htmlFor="bank" className="mb-1 block text-sm font-medium text-zinc-400">Banco / tipo de extrato</label>
+          {/* Upload zone */}
+          <div className="rounded-2xl border p-8 space-y-6" style={{ background: "#ffffff", borderColor: "rgba(195,198,213,0.2)" }}>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "#eff4ff" }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#063669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+              </div>
+              <h2 className="font-bold text-base" style={{ color: "#0b1c30" }}>Importar Extrato PDF</h2>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="bank" className="block text-xs font-bold uppercase tracking-wider mb-1" style={{ color: "#434653" }}>Banco / tipo de extrato</label>
                 <select id="bank" value={bank} onChange={(e) => setBank(e.target.value as BankValue)} disabled={busy}
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-zinc-500">
+                  className="w-full rounded-lg px-4 py-2.5 text-sm outline-none" style={{ background: "#eff4ff", color: "#0b1c30", border: "none" }}>
                   {BANK_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
-              <div className="flex-1">
-                <label htmlFor="pdf" className="mb-1 block text-sm font-medium text-zinc-400">Arquivo PDF</label>
-                <input id="pdf" type="file" accept=".pdf,application/pdf" disabled={busy}
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                  className="w-full text-sm text-zinc-300 file:mr-3 file:rounded-lg file:border file:border-zinc-600 file:bg-zinc-800 file:px-3 file:py-1.5 file:text-zinc-200" />
+              <div>
+                <label htmlFor="pdf" className="block text-xs font-bold uppercase tracking-wider mb-1" style={{ color: "#434653" }}>Arquivo PDF</label>
+                <div
+                  className="w-full rounded-lg px-4 py-2 text-sm flex items-center gap-3 cursor-pointer transition-colors"
+                  style={{ background: "#eff4ff", border: "2px dashed rgba(195,198,213,0.5)" }}
+                  onClick={() => document.getElementById("pdf-input")?.click()}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#737784" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  <span style={{ color: file ? "#0b1c30" : "#737784" }}>{file ? file.name : "Clique para selecionar..."}</span>
+                  <input id="pdf-input" type="file" accept=".pdf,application/pdf" disabled={busy} className="hidden"
+                    onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                </div>
               </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-xs" style={{ color: "#737784" }}>Formatos aceitos: PDF · máximo 10MB</p>
               <button type="button" disabled={busy || !file || !userId} onClick={() => mutation.mutate()}
-                className="rounded-lg bg-zinc-100 px-5 py-2.5 text-sm font-medium text-zinc-900 transition hover:bg-white disabled:opacity-40">
-                {busy ? "Importando…" : "Importar"}
+                className="rounded-xl px-6 py-2.5 text-sm font-bold hover:opacity-90 disabled:opacity-40 transition-opacity"
+                style={{ background: "#063669", color: "#ffffff" }}>
+                {busy ? "Importando..." : "Importar PDF"}
               </button>
             </div>
           </div>
 
+          {/* History */}
           <div>
-            <h2 className="mb-3 text-lg font-medium text-zinc-200">Últimas importações</h2>
+            <h2 className="mb-3 font-bold text-sm uppercase tracking-wider" style={{ color: "#737784" }}>Últimas importações</h2>
             {rows.length === 0 ? (
-              <p className="text-sm text-zinc-500">Nenhuma importação ainda.</p>
+              <div className="rounded-xl p-8 text-center" style={{ background: "#eff4ff" }}>
+                <p className="text-sm" style={{ color: "#737784" }}>Nenhuma importação ainda.</p>
+              </div>
             ) : (
-              <ul className="divide-y divide-zinc-800 rounded-xl border border-zinc-800 bg-zinc-900/30">
-                {rows.map((row) => (
-                  <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
-                    <span className="text-zinc-300">{row.filename}</span>
-                    <span className="text-zinc-500">{row.bank}</span>
-                    {statusBadge(row.status)}
-                    <span className="text-zinc-400">{row.imported_count ?? 0} / {row.total_transactions ?? "—"} lançamentos</span>
-                    <span className="text-xs text-zinc-600">{new Date(row.created_at).toLocaleString("pt-BR")}</span>
-                    <button
-                      onClick={() => void openReview(row.id)}
-                      className="text-xs font-bold rounded-full px-3 py-1 transition-opacity hover:opacity-80"
-                      style={{ background: "#eff4ff", color: "#063669" }}
-                    >
-                      Revisar
-                    </button>
+              <ul className="rounded-xl border overflow-hidden" style={{ borderColor: "rgba(195,198,213,0.2)" }}>
+                {rows.map((row, i) => (
+                  <li key={row.id}
+                    className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 text-sm"
+                    style={{ background: i % 2 === 0 ? "#ffffff" : "#fafbff", borderTop: i > 0 ? "1px solid #eff4ff" : "none" }}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#eff4ff" }}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#063669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium truncate text-xs" style={{ color: "#0b1c30" }}>{row.filename}</p>
+                        <p className="text-xs" style={{ color: "#737784" }}>{row.bank} · {new Date(row.created_at).toLocaleString("pt-BR")}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 shrink-0">
+                      <span className="text-xs" style={{ color: "#434653" }}>{row.imported_count ?? 0} / {row.total_transactions ?? "—"} lançamentos</span>
+                      {statusBadge(row.status)}
+                      <button
+                        onClick={() => void openReview(row.id)}
+                        className="text-xs font-bold rounded-full px-3 py-1 transition-opacity hover:opacity-80"
+                        style={{ background: "#eff4ff", color: "#063669" }}>
+                        Revisar
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
