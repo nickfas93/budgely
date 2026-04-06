@@ -351,20 +351,28 @@ export interface Database {
           name: string | null
           quantity: number
           avg_price: number
-          asset_type: 'acao' | 'fii' | 'etf' | 'bdr' | 'crypto'
+          asset_type: 'acao' | 'fii' | 'etf' | 'bdr' | 'crypto' | 'renda_fixa'
           active: boolean
           created_at: string
+          rf_index: 'cdi' | 'ipca' | 'selic' | 'prefixado' | null
+          rf_rate: number | null
+          rf_maturity: string | null
+          rf_invested: number | null
         }
         Insert: {
           id?: string
           user_id: string
           ticker: string
           name?: string | null
-          quantity: number
-          avg_price: number
-          asset_type: 'acao' | 'fii' | 'etf' | 'bdr' | 'crypto'
+          quantity?: number
+          avg_price?: number
+          asset_type: 'acao' | 'fii' | 'etf' | 'bdr' | 'crypto' | 'renda_fixa'
           active?: boolean
           created_at?: string
+          rf_index?: 'cdi' | 'ipca' | 'selic' | 'prefixado' | null
+          rf_rate?: number | null
+          rf_maturity?: string | null
+          rf_invested?: number | null
         }
         Update: Partial<Database['public']['Tables']['investment_assets']['Insert']>
         Relationships: [

@@ -28,6 +28,9 @@ const CACHE_TTL_MS = 15 * 60 * 1000 // 15 min
 // IBOV index cache
 let ibovCache: { changePercent: number; cachedAt: number } | null = null
 
+// Selic/CDI cache
+let selicCache: { annualRate: number; cachedAt: number } | null = null
+
 async function fetchQuotes(tickers: string[]): Promise<Map<string, { price: number; changePercent: number }>> {
   const now = Date.now()
   const stale = tickers.filter(t => {
@@ -83,6 +86,28 @@ async function fetchIbov(): Promise<number | null> {
   }
 }
 
+async function fetchSelic(): Promise<number | null> {
+  const now = Date.now()
+  if (selicCache && now - selicCache.cachedAt < CACHE_TTL_MS) {
+    return selicCache.annualRate
+  }
+  try {
+    const token = process.env.BRAPI_TOKEN
+    const url = token
+      ? `https://brapi.dev/api/v2/prime-rate?token=${token}`
+      : `https://brapi.dev/api/v2/prime-rate`
+    const res = await fetch(url, { next: { revalidate: 0 } })
+    if (!res.ok) return null
+    const data = (await res.json()) as { 'prime-rate'?: { type: string; annualRate: string }[] }
+    const entry = data['prime-rate']?.find(r => r.type === 'Selic' || r.type === 'CDI')
+    const rate = entry ? parseFloat(entry.annualRate) : null
+    if (rate !== null) selicCache = { annualRate: rate, cachedAt: now }
+    return rate
+  } catch {
+    return null
+  }
+}
+
 export async function GET(req: NextRequest) {
   const tickersParam = req.nextUrl.searchParams.get('tickers') ?? ''
   const tickers = tickersParam
@@ -95,14 +120,14 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [quotes, ibov] = await Promise.all([fetchQuotes(tickers), fetchIbov()])
+    const [quotes, ibov, selic] = await Promise.all([fetchQuotes(tickers), fetchIbov(), fetchSelic()])
 
     const quotesObj: Record<string, { price: number; changePercent: number }> = {}
     for (const [t, v] of quotes.entries()) {
       quotesObj[t] = v
     }
 
-    return NextResponse.json({ quotes: quotesObj, ibov })
+    return NextResponse.json({ quotes: quotesObj, ibov, selic })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     return NextResponse.json({ error: msg }, { status: 500 })
